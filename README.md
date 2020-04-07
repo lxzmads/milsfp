@@ -42,7 +42,7 @@ make addtestuser
 - 运行client测试
 
 ```
-./milsd
+./mils
 ```
 
 CLI交互式，可以输入命令进行操作。
