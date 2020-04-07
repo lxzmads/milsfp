@@ -1,9 +1,9 @@
-
-#include <dirent.h>
-
 #include "includes.h"
 #include "utils.h"
 #include "log.h"
+
+#include <dirent.h>
+#include <sys/stat.h>
 
 int
 listdir(char *path, char *buffer)
@@ -15,13 +15,12 @@ listdir(char *path, char *buffer)
  
     count = scandir(path, &entry_list, 0, alphasort);
     if (count < 0) {
-        error("scandir()");
         return -1;
     }
     for (i = 0; i < count; i++) {
         struct dirent *entry;
         entry = entry_list[i];
-        j += snprintf(buffer+j, MAXDIRLEN, "%s\n", entry->d_name);
+        j += snprintf(buffer+j, MAXDIRLEN, "%s ", entry->d_name);
         free(entry);
     }
     free(entry_list);
@@ -29,18 +28,36 @@ listdir(char *path, char *buffer)
 }
 
 int
+pwd(char **buffer)
+{
+    char *res = getcwd(NULL, MAXDIRLEN);
+
+    if (NULL == res) {
+        error_exit("pwd()");
+    } else {
+        *buffer = res;
+        return 0;
+    }
+}
+
+int
 createdir(char *path)
 {
+    struct stat st = {0};
+    int err;
 
-    return 0;
+    if(stat(path, &st) == -1){
+        err = mkdir(path, 0700);
+        return err;
+    }
+    return -1;
 
 }
 
 int
-deldir(char *paht)
+deldir(char *path)
 {
-
-    return 0;
+    return rmdir(path);
 }
 
 int
@@ -53,7 +70,6 @@ readfile(char *filename, char **buffer, int *size)
     numbyte = ftell(f);
     fseek(f, 0L, SEEK_SET);
     *buffer = (char *)malloc(numbyte);
-    printf("%p\n",*buffer);
     fread(*buffer, sizeof(char), numbyte, f);
     *size = numbyte;
     return 0;
@@ -63,17 +79,25 @@ int
 writefile(char *filename, char *buffer, int size)
 {
     FILE *f = fopen(filename, "wb");
-    fwrite(buffer, size, 1, f);
+    int res = fwrite(buffer, size, 1, f);
     fclose(f);
-    return 0;
+    return res > 0?0:-1;
 }
 
 int
 delfile(char *filename)
 {
-    
-    return 0;
+    return remove(filename);
 
+}
+
+int
+cd(char *path)
+{
+    if(opendir(path) != NULL){
+        return chdir(path);
+    }
+    return -1;
 }
 
 void
@@ -81,7 +105,6 @@ str_dump(char *str, size_t len)
 {
     int i;
 	char *ucp = str;
-    char sbuf[5124] = {0};
 
 	for (i = 0; i < len; i++) {
 		printf("%02x ", ucp[i]);

@@ -1,5 +1,11 @@
 # **MiLSFP** **i**s a **L**ightweight **S**ecure **F**ile **P**ocket
 
+# 依赖
+
+- libssl 1.1
+- libpam 1.1.8
+- gtk3.0
+
 # 编译方式
 
 ```

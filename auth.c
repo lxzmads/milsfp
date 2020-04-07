@@ -10,6 +10,29 @@ static struct pam_conv conv = {
     NULL
 };
 
+static int pamconv(int num_msg, const struct pam_message **msg,
+        struct pam_response **resp, void *appdata_ptr)
+{
+    char *pass = malloc(strlen(appdata_ptr)+1);
+    strcpy(pass, appdata_ptr);
+
+    int i;
+
+    *resp = calloc(num_msg, sizeof(struct pam_response));
+
+    for (i = 0; i < num_msg; ++i)
+    {
+        /* Ignore all PAM messages except prompting for hidden input */
+        if (msg[i]->msg_style != PAM_PROMPT_ECHO_OFF)
+            continue;
+
+        /* Assume PAM is only prompting for the password as hidden input */
+        resp[i]->resp = pass;
+    }
+
+    return PAM_SUCCESS;
+}
+
 int
 auth_password(const char *username, const char *password)
 {
@@ -19,24 +42,19 @@ auth_password(const char *username, const char *password)
 int
 auth_pam(const char *username,const char *password)
 {
-    pam_handle_t *pamh = NULL;
-    int retval;
-    const char *user = username;
+    /* use own PAM conversation function just responding with the
+       password passed here */
+    struct pam_conv conv = { &pamconv, (void *)password };
 
-    retval = pam_start("mislp", user, &conv, &pamh);
-    if(retval == PAM_SUCCESS){
-        retval = pam_authenticate(pamh, 0);
-    }
-    if(retval = PAM_SUCCESS){
-        retval = pam_acct_mgmt(pamh, 0);
-    }
+    pam_handle_t *handle;
+    int authResult;
 
-    if(pam_end(pamh, retval) != PAM_SUCCESS){
-        pamh = NULL;
-        error("auth_pam()");
-        exit(1);
-    }
-    return (retval == PAM_SUCCESS ? 0:1);
+    pam_start("shutterd", username, &conv, &handle);
+    authResult = pam_authenticate(handle,
+            PAM_SILENT|PAM_DISALLOW_NULL_AUTHTOK);
+    pam_end(handle, authResult);
+
+    return (authResult == PAM_SUCCESS ? 0:1);
 }
 
 int

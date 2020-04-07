@@ -15,6 +15,8 @@ SessionMap sessmap[MAXSESSION] = {0};
 //         return 0;
 //     }
 // }
+#define AUTHENTICATED 1
+#define NOT_AUTHENTICATED 0
 
 Session * 
 session_get(int fd)
@@ -28,17 +30,17 @@ session_start(int fd, char *in_host, char *in_port)
 {
     Session *s;
 
-    info("session start");
+    info("Session start");
     s = (Session *)malloc(sizeof(Session));
-    memset(s, 0, sizeof(Session));
-    debug("session address: %p", s);
     if(!s){
-        error_exit("session_start()");
+        error_exit("malloc()");
     }
+    memset(s, 0, sizeof(Session));
+    debug("Session address: %p", s);
     s->fd = fd;
     s->fromhost = in_host;
     s->fromport = in_port;
-    s->authenticated = 0;
+    s->authenticated = NOT_AUTHENTICATED;
     s->privilege = NO_PRIV;
     s->r_s = SESS_R_NO;
     s->w_s = SESS_W_FIN;
@@ -51,7 +53,7 @@ session_start(int fd, char *in_host, char *in_port)
 
 /* 销毁session */
 int
-session_destory(int fd)
+session_stop(int fd)
 {
     SSL_free(sessmap[fd]->ssl);
     free(sessmap[fd]);

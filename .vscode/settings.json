@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.inc": "php",
+        "includes.h": "c",
+        "pam_misc.h": "c",
+        "pam_appl.h": "c"
+    }
+}

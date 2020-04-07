@@ -3,6 +3,8 @@
 #include "session.h"
 #include "log.h"
 
+
+
 SSL_CTX *ctx = NULL;
 
 int
@@ -14,7 +16,7 @@ ssl_init(Session *s)
     SSL *ssl;
 
     /* 初始化ssl context，设置相应的ssl参数 */
-    info("start create new context");
+    info("Start create new SSL context");
     if(!ctx){
         SSL_load_error_strings();
         OpenSSL_add_ssl_algorithms();
@@ -39,7 +41,7 @@ ssl_init(Session *s)
             error("SSL_CTX_use_PrivateKey_file()");
             return -1;
         }
-        info("create new context");
+        info("Create new SSL context.");
     }
     ssl = SSL_new(ctx);
     if(!ssl){
@@ -53,7 +55,7 @@ ssl_init(Session *s)
     }
     SSL_set_fd(ssl, s->fd);
     s->ssl = ssl;
-    info("ssl init ok");
+    info("SSL init ok.");
     return 0;
 }
 
@@ -66,11 +68,11 @@ ssl_start(Session *s)
     n = SSL_do_handshake(s->ssl);
     // debug("n = %d", n);
     if(n == 1){
-        info("SSL connection established from %s: %s", s->fromhost, s->fromport);
+        info("SSL connection established from %s: %s.", s->fromhost, s->fromport);
         return 0;
     }else{
         sslerr = SSL_get_error(s->ssl, n);
-        // debug("sslerr = %d", sslerr);
+        debug("sslerr = %d", sslerr);
         switch (sslerr){
             case SSL_ERROR_WANT_READ:
             case SSL_ERROR_WANT_WRITE:

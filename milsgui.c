@@ -5,6 +5,8 @@
 #include "cmdloop.h"
 #include "milssl.h"
 
+#include "gtk/gtk.h"
+
 #define MAXEVENTS 10
 #define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT 6237
@@ -16,11 +18,17 @@ extern int cmd_push;
 extern int (*current_cmd_func)(SSL *,char **);
 extern char **params;
 
+char *bannerstr = "|\\/|o| _\n\
+|  |||_\\\n";
+
+GtkWidget *goButton;
+GtkWidget *mainText;
+GtkWidget *goEntry;
+
 static void
 banner()
 {
-    printf("|\\/|o| _\n\
-|  |||_\\\n");
+    
 }
 
 static void
@@ -64,13 +72,17 @@ socket_set_noblocking(int sfd)
     return 0;
 }
 
-int main(int argc, char *argv[]) {
+static void
+connect_server(const char *ip, int port)
+{
     const SSL_METHOD *meth;
     SSL_CTX* ctx;
     SSL* ssl;
     int clientfd, efd, err;
     struct sockaddr_in server_addr;
     char buf[4096], *errstr;
+
+    
 
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
@@ -140,6 +152,8 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
+
+
 
     struct epoll_event* events = calloc(MAXEVENTS, sizeof event);
     while (1) {
@@ -244,4 +258,46 @@ int main(int argc, char *argv[]) {
     close(clientfd);
     close(efd);
     return 0;
+}
+
+void onGoButtonClick()
+{
+	const gchar *command;
+	GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(mainText));
+
+	command = gtk_entry_get_text(GTK_ENTRY(goEntry));
+	gtk_text_buffer_set_text(buf, command, -1);
+}
+
+// called when window is closed
+void on_window_main_destroy()
+{
+    gtk_main_quit();
+}
+
+int
+main(int argc, char **argv)
+{
+    GtkBuilder *builder;
+    GtkWidget *window;
+    gtk_init(&argc, &argv);
+
+    builder = gtk_builder_new();
+    gtk_builder_add_from_file (builder, "glade/main.glade", NULL);
+
+    window = GTK_WIDGET(gtk_builder_get_object(builder, "mainWindow"));
+    goButton = GTK_WIDGET(gtk_builder_get_object(builder, "goButton"));
+    goEntry = GTK_WIDGET(gtk_builder_get_object(builder, "goEntry"));
+    mainText = GTK_WIDGET(gtk_builder_get_object(builder, "mainText"));
+
+    gtk_builder_connect_signals(builder, NULL);
+    
+    // get pointers to the two labels
+
+    g_object_unref(builder);
+
+    gtk_widget_show(window);                
+    gtk_main();
+
+	return 0;
 }

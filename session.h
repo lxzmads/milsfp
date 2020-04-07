@@ -45,6 +45,7 @@ typedef Session * SessionMap;
 
 Session     *session_get(int fd);
 int         session_start(int fd, char *in_host, char *in_port);
-int         session_destory(int fd);
+int         session_stop(int fd);
+int         do_authenticated();
 
 #endif
