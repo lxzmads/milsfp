@@ -90,7 +90,7 @@ body            optional    ------> 可选body部分
 
 3. Session会话机制由C代码手工实现
 
-4. 程序GUI界面
+4. 程序GUI界面（CLI程序员走心设计）
 
 ![interface](./interface.png)
 
