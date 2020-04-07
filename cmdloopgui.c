@@ -1,13 +1,14 @@
 #include "includes.h"
 #include "parcel.h"
 #include "log.h"
-#include "cmdloop.h"
+#include "cmdloopgui.h"
 #include "utils.h"
 #include "libgen.h"
 
 int cmd_push = 0;
 int (*current_cmd_func)(SSL *,char **);
 char **params;
+
 
 const char *command_str[] = {
     "LOGIN",
@@ -19,7 +20,6 @@ const char *command_str[] = {
     "MKDIR",
     "RMDIR",
     "cd",
-    "HELP",
     "EXIT"
 };
 int (*command_func[]) (char **) = {
@@ -32,9 +32,25 @@ int (*command_func[]) (char **) = {
     &c_mkdir,
     &c_rmdir,
     &c_cd,
-    &c_help,
     &c_exit
 };
+
+int
+c_help()
+{
+    gprintf("COMMANDS: HELP EXIT LOGIN ls GET PUT DEL MKDIR RMDIR cd pwd\n");
+    return -1;    
+}
+
+int
+c_exit()
+{
+    // free something.
+    exit(EXIT_SUCCESS);
+    return 0;
+}
+
+
 static int
 plain_cmd(SSL *ssl, int cmd)
 {
@@ -47,7 +63,6 @@ plain_cmd(SSL *ssl, int cmd)
     if(!buf){
         error_exit("malloc()");
     }
-    int j = 0;
     memset(buf, 0, sizeof(parcel_reqhdr));
     memcpy(buf, req, sizeof(parcel_reqhdr));
     // str_dumps(buf, sizeof(parcel_reqhdr));
@@ -97,17 +112,15 @@ plain_cmd1(SSL *ssl, int cmd, char *param)
 }
 
 static char
-**get_and_split()
+**command_split(const char *linep)
 {
-    char *linep = NULL, *token = NULL;
-    size_t linecapp = 0;
+    char *token = NULL;
     int i = 0, size =  TOK_BUFSIZE;
     char **tokens = malloc(TOK_BUFSIZE * sizeof(char *));
 
     if(!tokens){
         error_exit("get_and_split()");
     }
-    getline(&linep, &linecapp, stdin);
     token = strsep(&linep, TOK_DELIM);
     while(token != NULL){
         tokens[i++] = token;
@@ -121,7 +134,6 @@ static char
         }
         token = strsep(&linep, TOK_DELIM);
     }
-    free(linep);
     tokens[i] = NULL;
     return tokens;
 }
@@ -303,28 +315,13 @@ do_c_pwd(SSL *ssl, char **param)
     return plain_cmd(ssl, CMD_PWD);
 }
 
-int
-c_help()
-{
-    fprintf(stderr, "COMMANDS: HELP EXIT LOGIN ls GET PUT DEL MKDIR RMDIR cd pwd\n");
-    return -1;    
-}
 
 int
-c_exit()
-{
-    // free something.
-    exit(EXIT_SUCCESS);
-    return 0;
-}
-
-int
-command_loop()
+command_execute(const char *linep)
 {
     char **args;
 
-    printf("MILS> ");
-    args = get_and_split();
+    args = command_split(linep);
 
     if (args[0] == NULL) {
         return 1;
@@ -335,7 +332,6 @@ command_loop()
             return (*command_func[i])(args);
         }
     }
-    c_help(args);
     free(args);
     return -1;
 }

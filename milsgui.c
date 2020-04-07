@@ -2,10 +2,10 @@
 #include "parcel.h"
 #include "utils.h"
 #include "log.h"
-#include "cmdloop.h"
-#include "milssl.h"
+#include "cmdloopgui.h"
+#include "milsgui.h"
 
-#include "gtk/gtk.h"
+#include <gtk/gtk.h>
 
 #define MAXEVENTS 10
 #define SERVER_HOST "127.0.0.1"
@@ -17,27 +17,39 @@ int begin = 0;
 extern int cmd_push;
 extern int (*current_cmd_func)(SSL *,char **);
 extern char **params;
+struct epoll_event event;
+struct epoll_event* events;
+int clientfd, efd;
+SSL* ssl;
+GtkTextBuffer *textbuf;
 
-char *bannerstr = "|\\/|o| _\n\
-|  |||_\\\n";
+char *bannerstr = "|\\/|o|  _\n\
+|    | | |_\\\n";
+char *helpstr = "\nCOMMANDS: HELP EXIT LOGIN ls GET PUT DEL MKDIR RMDIR cd pwd\n";
+char welcome[2048];
 
 GtkWidget *goButton;
 GtkWidget *mainText;
 GtkWidget *goEntry;
+GtkWidget *hostEntry;
+GtkWidget *portEntry;
+GtkWidget *connectButton;
+
+
 
 static void
 banner()
 {
-    
+    snprintf(welcome, 2048, "%s", bannerstr);
 }
 
 static void
 verify_server(SSL *ssl) 
 {
     const EVP_MD *fprint_type = NULL;
-    int ret, j, fprint_size;
+    int j, fprint_size, ret = 0;
     unsigned char fprint[EVP_MAX_MD_SIZE];
-    BIO *outbio  = BIO_new_fp(stdout, BIO_NOCLOSE);
+    char msg[1024] = {0};
 
     X509 *cert = SSL_get_peer_certificate(ssl);
     if (cert != NULL) {
@@ -46,13 +58,18 @@ verify_server(SSL *ssl)
         if (!X509_digest(cert, fprint_type, fprint, &fprint_size)){
             error_exit("X509_digest()");
         }
-        BIO_printf(outbio,"Server Fingerprint: ");
-        for (j=0; j<fprint_size; ++j) BIO_printf(outbio, "%02x ", fprint[j]);
-            BIO_printf(outbio,"\n");
+        info("%d\n", fprint_size);
+        BIO_snprintf(msg, 21 ,"Server Fingerprint: ");
+        for (j=0; j<fprint_size; ++j){
+            ret += BIO_snprintf(msg + 20 + ret, 4, "%02x ", fprint[j]);
+        }
+        BIO_snprintf(msg + ret + 20,2,"\n");
     } else {
         error_exit("Untrusted server");
     }
-    BIO_free_all(outbio);
+    fprintf(stderr, welcome);
+    fprintf(stderr, "%d %d\n", strlen(bannerstr), strlen(welcome));
+    snprintf(welcome + strlen(bannerstr), 2048, "%s", msg);
     X509_free(cert);
 }
 
@@ -77,12 +94,11 @@ connect_server(const char *ip, int port)
 {
     const SSL_METHOD *meth;
     SSL_CTX* ctx;
-    SSL* ssl;
-    int clientfd, efd, err;
-    struct sockaddr_in server_addr;
-    char buf[4096], *errstr;
 
-    
+    int err;
+    struct sockaddr_in server_addr;
+    char buf[4096];
+  
 
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
@@ -109,7 +125,8 @@ connect_server(const char *ip, int port)
         error_exit("epoll_create");
     }
 
-    struct epoll_event event;
+    events = calloc(MAXEVENTS, sizeof event);  
+
     event.data.fd = clientfd;
     event.events = EPOLLIN | EPOLLOUT | EPOLLET;
 
@@ -146,127 +163,157 @@ connect_server(const char *ip, int port)
             }
         }
         else {
-            verify_server(ssl);
             banner();
-            c_help();
+            verify_server(ssl);
+            snprintf(welcome + 104, 2048, helpstr);
+            gprintf(welcome);
             break;
         }
     }
+}
 
+void
+gprintf(const char *msgf,...)
+{
+    char *fmtbuf, *msgbuf;
+    va_list args;
 
+    msgbuf = (char *)malloc(5120);
+    fmtbuf = (char *)malloc(5120);
 
-    struct epoll_event* events = calloc(MAXEVENTS, sizeof event);
-    while (1) {
-        if(arrvied){
-            arrvied = 0;
-            while(command_loop()==-1);
-        }
+    va_start(args, msgf);
+    snprintf(fmtbuf, 5120, "%s\n", msgf);
+    vsnprintf(msgbuf, 5120, fmtbuf, args);
+    va_end(args);
+    fprintf(stderr, msgbuf);
+    gtk_text_buffer_set_text(textbuf, msgbuf, -1);
+    
+    free(msgbuf);
+    free(fmtbuf);
+}
+void onConnectButtonClick()
+{
 
-        int n = epoll_wait(efd, events, MAXEVENTS, 5000);
-        if (n < 0 && n == EINTR) {
-            continue;
-        }
-        int i;
-        for (i = 0; i < n; i++) {
-            if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP)
-                    || (!(events[i].events & (EPOLLIN | EPOLLOUT)))) {
-                error_exit("epoll_wait()");
-                close(events[i].data.fd);
-                continue;
-            }
-            // read
-            else if (events->events & (EPOLLIN)) {
-                int rd;
-                char *content;
-                int sslerr;
-                int j=0;
+    const char *host;
+    const char *port;
 
-                char *reshdr = (char *)malloc(sizeof(parcel_reshdr));
+	host = gtk_entry_get_text(GTK_ENTRY(hostEntry));
+    port =gtk_entry_get_text(GTK_ENTRY(portEntry));
 
-                if((rd = SSL_read(ssl, reshdr, sizeof(parcel_reshdr))) > 0){
-                    parcel_reshdr *res1 = (parcel_reshdr *)reshdr;
-                    content = (char *)malloc(res1->size);
-                    //info("%d, %d\n", res1->status_code, res1->size);
-                    while((rd=SSL_read(ssl, content+j, res1->size-j)) > 0){
-                        j+=rd;
-                    }
-                    // printf("content: %s\n", content);
-                    if(rd == -1){
-                        sslerr = SSL_get_error(ssl, rd);
-                        if (sslerr != SSL_ERROR_WANT_READ){
-                            ERR_print_errors_fp(stderr);
-                            error("parcel_recv()");
-                        }else{
-                            if(j == res1->size){                                                         arrvied = 1;
-                                event.events = EPOLLOUT | EPOLLET;
-                                epoll_ctl(efd, EPOLL_CTL_MOD, clientfd, &event);
-                                switch(res1->status_code){
-                                    case STATUS_OK:
-                                        printf("%s\n", content);
-                                        break;
-                                    case STATUS_FILE:
-                                        writefile(res1->param, content, res1->size);
-                                        printf("Operation OK\n");
-                                        break;
-                                    case STATUS_REQUEST_AUTH:
-                                        printf("Request Login\n");
-                                        break;
-                                    case STATUS_FAIL_PRIV:
-                                        break;
-                                    case STATUS_FAIL_INTERNAL:
-                                        break;
-                                    case STATUS_FAIL_AUTH:
-                                        printf("Wrong user or password\n");
-                                        break;
-                                    case STATUS_SUCCESS_AUTH:
-                                        printf("Login OK\n");
-                                        break;
-                                    case STATUS_OP_OK:
-                                        printf("Operation OK\n");
-                                        break;
-                                    case STATUS_OP_FAIL:
-                                        printf("Operation Fail\n");
-                                        break;
-                                    default:
-                                        error("Unknow response type");
-                                        exit(EXIT_FAILURE);
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
-                
-            }
-            //write
-            else if (events->events & EPOLLOUT) {
-                if(cmd_push){
-                    if(current_cmd_func == NULL){
-                        error("unknow command");
-                        continue;
-                    }
-                    (*current_cmd_func)(ssl, params);
-                    cmd_push = 0;
-                    arrvied = 0;
-                    event.events = EPOLLIN | EPOLLET;
-                    epoll_ctl(efd, EPOLL_CTL_MOD, clientfd, &event);
-                }
-            }
-        }
-    }
-    free(events);
-    close(clientfd);
-    close(efd);
-    return 0;
+    info("connecting %s:%s", host,port);
+    connect_server(host, strtol(port, NULL, 10));
+
 }
 
 void onGoButtonClick()
 {
-	const gchar *command;
-	GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(mainText));
+	const char *command;
 
 	command = gtk_entry_get_text(GTK_ENTRY(goEntry));
-	gtk_text_buffer_set_text(buf, command, -1);
+    if(command_execute(command) < 0){
+        gprintf(helpstr);
+    }else{
+
+        arrvied = 0;
+        while (1) {
+            if(arrvied){
+                arrvied = 0;
+                break;
+            }
+
+            int n = epoll_wait(efd, events, MAXEVENTS, 5000);
+            if (n < 0 && n == EINTR) {
+                continue;
+            }
+            int i;
+            for (i = 0; i < n; i++) {
+                if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP)
+                        || (!(events[i].events & (EPOLLIN | EPOLLOUT)))) {
+                    error_exit("epoll_wait()");
+                    close(events[i].data.fd);
+                    continue;
+                }
+                // read
+                else if (events->events & (EPOLLIN)) {
+                    int rd;
+                    char *content;
+                    int sslerr;
+                    int j=0;
+
+                    char *reshdr = (char *)malloc(sizeof(parcel_reshdr));
+
+                    if((rd = SSL_read(ssl, reshdr, sizeof(parcel_reshdr))) > 0){
+                        parcel_reshdr *res1 = (parcel_reshdr *)reshdr;
+                        content = (char *)malloc(res1->size);
+                        //info("%d, %d\n", res1->status_code, res1->size);
+                        while((rd=SSL_read(ssl, content+j, res1->size-j)) > 0){
+                            j+=rd;
+                        }
+                        // printf("content: %s\n", content);
+                        if(rd == -1){
+                            sslerr = SSL_get_error(ssl, rd);
+                            if (sslerr != SSL_ERROR_WANT_READ){
+                                ERR_print_errors_fp(stderr);
+                                error("parcel_recv()");
+                            }else{
+                                if(j == res1->size){                                                         arrvied = 1;
+                                    event.events = EPOLLOUT | EPOLLET;
+                                    epoll_ctl(efd, EPOLL_CTL_MOD, clientfd, &event);
+                                    switch(res1->status_code){
+                                        case STATUS_OK:
+                                            gprintf("%s\n", content);
+                                            break;
+                                        case STATUS_FILE:
+                                            writefile(res1->param, content, res1->size);
+                                            gprintf("Operation OK\n");
+                                            break;
+                                        case STATUS_REQUEST_AUTH:
+                                            gprintf("Request Login\n");
+                                            break;
+                                        case STATUS_FAIL_PRIV:
+                                            break;
+                                        case STATUS_FAIL_INTERNAL:
+                                            break;
+                                        case STATUS_FAIL_AUTH:
+                                            gprintf("Wrong user or password\n");
+                                            break;
+                                        case STATUS_SUCCESS_AUTH:
+                                            gprintf("Login OK\n");
+                                            break;
+                                        case STATUS_OP_OK:
+                                            gprintf("Operation OK\n");
+                                            break;
+                                        case STATUS_OP_FAIL:
+                                            gprintf("Operation Fail\n");
+                                            break;
+                                        default:
+                                            error("Unknow response type");
+                                            exit(EXIT_FAILURE);
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    
+                }
+                //write
+                else if (events->events & EPOLLOUT) {
+                    if(cmd_push){
+                        if(current_cmd_func == NULL){
+                            gprintf("unknow command");
+                            continue;
+                        }
+                        (*current_cmd_func)(ssl, params);
+                        cmd_push = 0;
+                        arrvied = 0;
+                        event.events = EPOLLIN | EPOLLET;
+                        epoll_ctl(efd, EPOLL_CTL_MOD, clientfd, &event);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // called when window is closed
@@ -280,6 +327,9 @@ main(int argc, char **argv)
 {
     GtkBuilder *builder;
     GtkWidget *window;
+    const char *ip="123";
+    int port=123;
+
     gtk_init(&argc, &argv);
 
     builder = gtk_builder_new();
@@ -288,16 +338,25 @@ main(int argc, char **argv)
     window = GTK_WIDGET(gtk_builder_get_object(builder, "mainWindow"));
     goButton = GTK_WIDGET(gtk_builder_get_object(builder, "goButton"));
     goEntry = GTK_WIDGET(gtk_builder_get_object(builder, "goEntry"));
+    hostEntry = GTK_WIDGET(gtk_builder_get_object(builder, "hostEntry"));
+    portEntry = GTK_WIDGET(gtk_builder_get_object(builder, "portEntry"));
     mainText = GTK_WIDGET(gtk_builder_get_object(builder, "mainText"));
 
     gtk_builder_connect_signals(builder, NULL);
+    textbuf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(mainText));
     
     // get pointers to the two labels
+
 
     g_object_unref(builder);
 
     gtk_widget_show(window);                
+    // connect_server(ip, port);
     gtk_main();
+
+    free(events);
+    close(clientfd);
+    close(efd);
 
 	return 0;
 }

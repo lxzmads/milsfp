@@ -1,8 +1,11 @@
 {
     "files.associations": {
         "*.inc": "php",
-        "includes.h": "c",
         "pam_misc.h": "c",
-        "pam_appl.h": "c"
+        "pam_appl.h": "c",
+        "includes.h": "c",
+        "milssl.h": "c",
+        "gtk.h": "c",
+        "parcel.h": "c"
     }
 }
